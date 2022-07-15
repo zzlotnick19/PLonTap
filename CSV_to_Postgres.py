@@ -3,6 +3,8 @@ import pandas as pd
 import psycopg2
 import psycopg2.extras
 import numpy as np
+import DB_Table_Math
+
 
 def initialize_DB(file_name):
     # connection credentials
@@ -21,18 +23,16 @@ def initialize_DB(file_name):
     return "host=%s dbname=%s user=%s password=%s port=%s" % (hostname, database, username, pwd, port_id)
 
 # establish connection to database and execute all sub-methods
-def read_csv_file(directory, file_name, file_type, overwrite):
+def read_csv_file(directory, file_name, file_type, database):
     path = directory + file_name + file_type
     print("copying file: \"%s\" to Postgres DB..." % file_name)
 
-    df = pd.read_csv(path)
+    # get the dataframe from the file path
+    dataframe = pd.read_csv(path)
 
+    # reformat rows and columns to fix postgres naming protocols
     file_name_formatted = reformat_table_name(file_name)
-
-    if file_name.find("fantrax") != -1:
-        col_name_formatted = reformat_col_name(df)
-    else:
-        col_name_formatted = reformat_col_name(df)
+    col_name_formatted = reformat_col_name(dataframe, database)
 
     try:
         conn_string = initialize_DB(file_name)
@@ -48,7 +48,7 @@ def read_csv_file(directory, file_name, file_type, overwrite):
         cur.execute("CREATE table %s (%s)" % (file_name_formatted, col_name_formatted))
         print("table \"%s\" created successfully!" % file_name_formatted)
 
-        df.to_csv("temp.csv", header=df.columns, index=False, encoding='utf-8')
+        dataframe.to_csv("temp.csv", header=dataframe.columns, index=False, encoding='utf-8')
         print("dataframe converted to CSV file")
 
         temp_file = open("temp.csv")
@@ -67,7 +67,7 @@ def read_csv_file(directory, file_name, file_type, overwrite):
         cur.execute("grant select on table %s to public" % file_name_formatted)
         print("%s copied successfully!" % file_name_formatted)
 
-        #write changes
+        # write changes
         conn.commit()
 
     except Exception as error:
@@ -88,13 +88,24 @@ def reformat_table_name(file_name):
 
 
 # take name of column and standardize it somehow
-def reformat_col_name(dataframe):
+def reformat_col_name(dataframe, database):
 
     dataframe.columns = [col.lower().replace("+/-", "add_drop_delta").replace(" ", "_").replace("-", "_"). \
-                            replace("/", "p").replace("%", "percent").replace("on", "ons") \
-                            for col in dataframe.columns]
+                         replace("/", "p").replace("%", "percent") \
+                         for col in dataframe.columns]
 
-    # processing data
+    # additional formatting for database specific purposes
+
+    # FANTRAX ONLY
+    if database == "Fantrax":
+        dataframe = DB_Table_Math.add_ghost_points(dataframe)
+
+    # ROTOWIRE ONLY
+    elif database == "RotoWire":
+        dataframe.columns = [col.replace("on", "sub_on").replace("off", "sub_off") \
+                             for col in dataframe.columns]
+
+    # Data type conversions to SQL design types
     replacements = {
         'timedelta64[ns]': 'varchar',
         'object': 'varchar',
@@ -103,6 +114,7 @@ def reformat_col_name(dataframe):
         'datetime64': 'timestamp'
     }
 
+    # form the final column string with commas as the delimiter
     col_str = ", ".join(
         "{} {}".format(n, d) for (n, d) in zip(dataframe.columns, dataframe.dtypes.replace(replacements)))
 
