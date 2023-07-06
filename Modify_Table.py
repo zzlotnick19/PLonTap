@@ -20,3 +20,10 @@ def add_ghost_points(df):
     df['gh_pts'] = np.select(conditions, choices, default=0)
 
     return df
+
+
+def add_gameweek(df, gameweek):
+    df['GW'] = gameweek
+
+    return df
+

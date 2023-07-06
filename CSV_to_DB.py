@@ -1,11 +1,10 @@
 import os
 import pandas as pd
 import psycopg2
-import psycopg2.extras
 import numpy as np
-import DB_Table_Math
+import Modify_Table
 
-
+# initializes the appropriate DB based on the file name provided
 def initialize_DB(file_name):
     # connection credentials
     hostname = "localhost"
@@ -22,7 +21,7 @@ def initialize_DB(file_name):
 
     return "host=%s dbname=%s user=%s password=%s port=%s" % (hostname, database, username, pwd, port_id)
 
-# establish connection to database and execute all sub-methods
+# establish connection to database and execute all sub-methods used to format/read/insert the CSV into the DB
 def read_csv_file(directory, file_name, file_type, database):
     path = directory + file_name + file_type
     print("copying file: \"%s\" to Postgres DB..." % file_name)
@@ -34,6 +33,13 @@ def read_csv_file(directory, file_name, file_type, database):
     file_name_formatted = reformat_table_name(file_name)
     col_name_formatted = reformat_col_name(dataframe, database)
 
+    # Make any manual modifications to the dataframe right after reformatting it
+    if database == "Fantrax":
+        dataframe = Modify_Table.add_ghost_points(dataframe)
+
+    # reformat columns one more time to prevent editing errors
+    col_name_formatted = reformat_col_name(dataframe, database)
+
     try:
         conn_string = initialize_DB(file_name)
         print("establishing connection...")
@@ -41,20 +47,29 @@ def read_csv_file(directory, file_name, file_type, database):
         # initialize connection and cursor
         conn = psycopg2.connect(conn_string)
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        print("connected to database")
+
+        # check if a table exists already
+        cur.execute("SELECT exists(SELECT * from information_schema.tables where table_name=%s)", ('Fantrax 21_22',))
+        isTable = cur.fetchone()[0]
 
         # create a table with refactored titles & columns
-        cur.execute("DROP table if exists %s" % file_name_formatted)
-        cur.execute("CREATE table %s (%s)" % (file_name_formatted, col_name_formatted))
-        print("table \"%s\" created successfully!" % file_name_formatted)
+        # cur.execute("DROP table if exists %s" % file_name_formatted)
+        if not isTable:
+            cur.execute("CREATE table %s (%s)" % (file_name_formatted, col_name_formatted))
+            print("table \"%s\" created successfully!" % file_name_formatted)
+
+        else:
+
+        # Add a column for the specific gameweek
+        dataframe = Modify_Table.add_gameweek(dataframe, file_name[len(database)+1:])
 
         dataframe.to_csv("temp.csv", header=dataframe.columns, index=False, encoding='utf-8')
-        print("dataframe converted to CSV file")
+        #print("dataframe converted to CSV file")
 
         temp_file = open("temp.csv")
-        print("CSV opened")
+        #print("CSV opened")
 
-        # generate SQL statement
+        # Generate SQL statement
         SQL_STATEMENT = """
         COPY %s FROM STDIN WITH
             CSV
@@ -96,12 +111,8 @@ def reformat_col_name(dataframe, database):
 
     # additional formatting for database specific purposes
 
-    # FANTRAX ONLY
-    if database == "Fantrax":
-        dataframe = DB_Table_Math.add_ghost_points(dataframe)
-
     # ROTOWIRE ONLY
-    elif database == "RotoWire":
+    if database == "RotoWire":
         dataframe.columns = [col.replace("on", "sub_on").replace("off", "sub_off") \
                              for col in dataframe.columns]
 

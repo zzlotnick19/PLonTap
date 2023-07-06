@@ -1,4 +1,4 @@
-import CSV_to_Postgres
+import CSV_to_DB
 import psycopg2
 import psycopg2.extras
 import time
@@ -18,10 +18,13 @@ rotowire_directory = '/Users/zacharyzlotnick/Documents/Programming/EPL Draft/Rot
 
 def populate_fantrax_data():
     for week in season:
+
         if os.path.exists(fantrax_directory + 'fantrax ' + str(week) + '.csv'):
-            # create all Fantrax standard player scoring tables by gameweek
-            CSV_to_Postgres.read_csv_file(fantrax_directory, 'fantrax ' + str(week), '.csv', 'Fantrax')
-            time.sleep(0.05)
+
+            # insert any new data to a Fantrax-specific table
+            CSV_to_DB.read_csv_file(fantrax_directory, 'fantrax ' + str(week), '.csv', 'Fantrax')
+            time.sleep(0.025)
+
         else:
             print("No Fantrax data found for week %d " % week)
 
@@ -31,13 +34,20 @@ def populate_rotowire_data():
 
         # check that the path exists before proceeding
         if os.path.exists(rotowire_directory + 'rotowire ' + str(week) + '.csv'):
+
             # create all RotoWire advanced player statistic tables by gameweek
-            CSV_to_Postgres.read_csv_file(rotowire_directory, 'rotowire ' + str(week), '.csv', 'RotoWire')
-            time.sleep(0.05)
+            CSV_to_DB.read_csv_file(rotowire_directory, 'rotowire ' + str(week), '.csv', 'RotoWire')
+            time.sleep(0.025)
+
         else:
             print("No RotoWire data found for week %d " % week)
 
+# =================================================================
+# Run "Main" functions here
+# =================================================================
 
-# run main functions to populate data tables in Postgres
+# populate the fantrax table in the DB
 populate_fantrax_data()
+
+# populate the rotowire table in the DB
 populate_rotowire_data()
